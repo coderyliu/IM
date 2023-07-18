@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+    <script src="https://cdn.bootcdn.net/ajax/libs/vue/2.6.14/vue.min.js"></script>
+  </head>
+  <body>
+    <div id="app">
+      <div v-if="isShow">
+        <label for="name">
+          昵称：<input type="text" v-model="name" id="name" />
+        </label>
+        <label for="uid">
+          UID：<input type="text" v-model="uid" id="uid" />
+        </label>
+        <label for="roomId">
+          房间号：<input type="text" v-model="roomId" id="roomId" />
+        </label>
+        <button type="button" @click="enter">进入聊天室</button>
+      </div>
+
+      <div v-else>
+        <ul>
+          <li v-for="(item,index) in lists" :key="index">{{item}}</li>
+          <li>在线人数{{num}}</li>
+        </ul>
+
+        <div class="ctr">
+          <input type="text" id="msg" v-model="message" />
+          <button type="button" id="send" @click="send">发送</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // 这样实现的简易在线聊天室还存在很多问题
+      // 1.用户离线缓存信息
+      // 2.客户端与服务端断开连接之后更新在线人数，并通知其他客户端
+      // 3.客户端与服务端检测ws的联通 心跳检测
+      // 4.没有房间的概念，每次发的信息都会转发给其他客户端
+
+      const app = new Vue({
+        el: "#app",
+        data: {
+          isShow: true, //是否登陆
+          message: "", //发送消息
+          lists: [], //消息列表
+          ws: {}, //webSocket实例
+          name: "", //用户名
+          uid: "", //用户ID
+          roomId: "", //房间号
+          num: 0, //房间人数
+        },
+        methods: {
+          enter() {
+            if (!this.name.trim()) return alert("用户名不能为空");
+
+            this.init();
+            this.isShow = false;
+          },
+          init() {
+            this.ws = new WebSocket("ws://localhost:4399");
+
+            this.ws.onopen = this.onOpen;
+            this.ws.onmessage = this.onMessage;
+            this.ws.onclose = this.onClose;
+            this.ws.onerror = this.onError;
+          },
+          onOpen() {
+            console.log("open:" + this.ws.readyState);
+
+            const senMsg = {
+              event: "enter",
+              message: this.name,
+              roomId: this.roomId,
+              uid: this.uid,
+            };
+
+            this.ws.send(JSON.stringify(senMsg));
+          },
+          onMessage(e) {
+            // 用户未进入聊天室，则不接受消息
+            if (this.isShow) return;
+
+            // 接受服务端发送过来的消息
+            const obj = JSON.parse(e.data);
+            switch (obj.event) {
+              case "enter":
+                // 当有一个新用户进入聊天室
+                this.lists.push("欢迎：" + obj.message + "加入聊天室");
+                break;
+              case "out":
+                this.lists.push(obj.name + "已经退出了聊天室");
+                break;
+              default:
+                if (obj.name !== this.name) {
+                  // 接受正常聊天
+                  this.lists.push(obj.name + "：" + obj.message);
+                }
+            }
+            this.num = obj.num;
+          },
+          onClose() {
+            console.log("close:" + this.ws.readyState);
+            console.log("已关闭websocket");
+          },
+          onError() {
+            // 连接失败或者通话失败
+            console.log("error:" + this.ws.readyState);
+            console.log("websocket连接失败");
+            // 连接失败之后1s断线重连
+            setTimeout(() => {
+              this.init();
+            }, 1000);
+          },
+          send() {
+            this.lists.push(this.name + "：" + this.message);
+            this.ws.send(
+              JSON.stringify({
+                event: "message",
+                message: this.message,
+                name: this.name,
+              })
+            );
+            this.message = "";
+          },
+        },
+      });
+    </script>
+  </body>
+</html>
